@@ -4,6 +4,7 @@ from .layout import label_side, layout
 from .model import LATEX, kind
 
 SCALE = 1.5
+TEXT_WIDTH = 18.0
 
 _STYLE = {"photon": "photon", "boson": "boson", "gluon": "gluon", "scalar": "scalar"}
 
@@ -51,8 +52,7 @@ def tex_document(results, cols: int = None) -> str:
     counter = 0
     for process, diagrams in results:
         layouts = [layout(d) for d in diagrams]
-        height = layouts[0].ymax - layouts[0].ymin + 1.0
-        per_row = cols or (2 if height > 3.0 else 3)
+        per_row = cols or max(1, min(3, int(TEXT_WIDTH // (layouts[0].width * SCALE + 1.6))))
         first = counter + 1
         for lay in layouts:
             counter += 1

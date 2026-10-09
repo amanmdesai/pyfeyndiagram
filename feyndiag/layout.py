@@ -10,7 +10,8 @@ import numpy as np
 from .generate import Diagram
 from .model import FERMIONS, anti
 
-WIDTH = 2.4
+MIN_WIDTH = 2.4
+VERTEX_SPACING = 1.2
 ROW = 1.3
 EPS = 1e-6
 
@@ -28,6 +29,7 @@ class Layout:
     pos: dict
     lines: list
     externals: dict
+    width: float = MIN_WIDTH
 
     @property
     def ymin(self) -> float:
@@ -90,10 +92,25 @@ def layout(diagram: Diagram) -> Layout:
             for nb in hanging(path[k], (path[k - 1], path[k + 1])):
                 out_order.extend(leaves(nb, path[k]))
 
+    def farthest(start):
+        dist = {start: 0}
+        queue = [start]
+        while queue:
+            cur = queue.pop(0)
+            for nb in adj[cur]:
+                if nb not in dist:
+                    dist[nb] = dist[cur] + 1
+                    queue.append(nb)
+        node = max(dist, key=dist.get)
+        return node, dist[node]
+
+    diameter = farthest(farthest("x0")[0])[1]
+    width = max(MIN_WIDTH, VERTEX_SPACING * (diameter - 1))
+
     k = len(out_order)
     pos = {}
     for j, idx in enumerate(out_order):
-        pos[f"x{idx}"] = (WIDTH, ((k - 1) / 2 - j) * ROW)
+        pos[f"x{idx}"] = (width, ((k - 1) / 2 - j) * ROW)
     if diagram.n_in == 1:
         pos["x0"] = (0.0, 0.0)
     else:
@@ -127,7 +144,7 @@ def layout(diagram: Diagram) -> Layout:
     for members in groups.values():
         slots = sorted((pos[f"x{i}"][1] for i in members), reverse=True)
         for i, y in zip(sorted(members), slots):
-            pos[f"x{i}"] = (WIDTH, y)
+            pos[f"x{i}"] = (width, y)
 
     lines = []
     for e in diagram.edges:
@@ -139,4 +156,4 @@ def layout(diagram: Diagram) -> Layout:
             lines.append(Line(e.u, e.v, e.pdg, external))
 
     externals = {f"x{i}": (diagram.external_pdg(i), i < diagram.n_in) for i in range(n)}
-    return Layout(diagram, pos, lines, externals)
+    return Layout(diagram, pos, lines, externals, width)

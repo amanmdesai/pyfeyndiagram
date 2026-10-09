@@ -105,6 +105,36 @@ def _build_diagram(top: Node, legs: tuple, n_in: int) -> Diagram:
     return Diagram(legs, n_in, edges, top.qcd, top.qed)
 
 
+def _has_resonances(diagram: Diagram, resonances: tuple) -> bool:
+    adj = defaultdict(list)
+    for e in diagram.edges:
+        adj[e.u].append(e.v)
+        adj[e.v].append(e.u)
+
+    def side(start: str, blocked: str) -> frozenset:
+        seen, stack, found = {start, blocked}, [start], set()
+        while stack:
+            node = stack.pop()
+            if node.startswith("x"):
+                found.add(int(node[1:]))
+            for nb in adj[node]:
+                if nb not in seen:
+                    seen.add(nb)
+                    stack.append(nb)
+        return frozenset(found)
+
+    cuts = [(side(e.u, e.v), e.pdg) for e in diagram.edges if e.u.startswith("v")]
+    everything = frozenset(range(len(diagram.legs)))
+    for parent, leaves in resonances:
+        wanted = frozenset(leaves)
+        if not any(
+            (below == wanted and pdg == anti(parent)) or (below == everything - wanted and pdg == parent)
+            for below, pdg in cuts
+        ):
+            return False
+    return True
+
+
 def generate(process: Process, model: Model) -> list:
     """All tree-level diagrams of a process, as a list of Diagram."""
     legs = process.legs
@@ -142,7 +172,10 @@ def generate(process: Process, model: Model) -> list:
 
     tops = [s for ss in currents[full].values() for s in ss]
     tops.sort(key=_signature)
-    return [_build_diagram(top, legs, len(process.incoming)) for top in tops]
+    diagrams = [_build_diagram(top, legs, len(process.incoming)) for top in tops]
+    if process.resonances:
+        diagrams = [d for d in diagrams if _has_resonances(d, process.resonances)]
+    return diagrams
 
 
 def generate_all(text: str, model: Model = None, max_qcd=None, max_qed=None) -> list:

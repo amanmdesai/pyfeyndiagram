@@ -5,7 +5,7 @@ from matplotlib import rc_context
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.figure import Figure
 
-from .layout import WIDTH, label_side, layout
+from .layout import label_side, layout
 from .model import LATEX, kind
 
 WAVE_AMP = 0.05
@@ -40,7 +40,7 @@ def _line_points(style: str, p, q) -> np.ndarray:
 def draw_diagram(ax, lay) -> None:
     ax.set_aspect("equal")
     ax.axis("off")
-    ax.set_xlim(-0.75, WIDTH + 0.75)
+    ax.set_xlim(-0.75, lay.width + 0.75)
     ax.set_ylim(lay.ymin - 0.5, lay.ymax + 0.5)
 
     for line in lay.lines:
@@ -73,10 +73,26 @@ def draw_diagram(ax, lay) -> None:
         )
 
 
+_GRIDS = [(3, 4), (3, 3), (2, 4), (2, 3), (3, 2), (2, 2), (1, 3), (1, 2), (1, 1)]
+_AREA = (PAGE_SIZE[0] * 0.92, PAGE_SIZE[1] * 0.88)
+_MIN_SCALE = 0.6
+
+
 def _page_grid(layouts) -> tuple:
-    height = layouts[0].ymax - layouts[0].ymin + 1.0
-    cols = 2 if height > 3.0 or len(layouts) <= 4 else 3
-    return cols, 4
+    lay = layouts[0]
+    w = lay.width + 1.5
+    h = lay.ymax - lay.ymin + 1.0
+    cap = max(4, len(layouts) + 1)
+
+    def scale(grid):
+        cols, rows = grid
+        return min(_AREA[0] / cols / w, _AREA[1] / rows / h)
+
+    fitting = [g for g in _GRIDS if g[0] * g[1] <= cap]
+    for grid in fitting:
+        if scale(grid) >= _MIN_SCALE:
+            return grid
+    return max(fitting or _GRIDS[-1:], key=scale)
 
 
 def write_pdf(results, path: str, title: str = None) -> None:

@@ -17,6 +17,9 @@ class Process:
     excluded: frozenset = frozenset()
     max_qcd: Optional[int] = None
     max_qed: Optional[int] = None
+    production: Optional[tuple] = None
+    decays: tuple = ()
+    resonances: tuple = ()
 
     @property
     def legs(self) -> tuple:
@@ -24,16 +27,38 @@ class Process:
         return tuple(self.incoming) + tuple(anti(p) for p in self.outgoing)
 
     def __str__(self) -> str:
+        final = self.outgoing if self.production is None else self.production
         text = " ".join(NAMES[p] for p in self.incoming)
-        text += " > " + " ".join(NAMES[p] for p in self.outgoing)
+        text += " > " + " ".join(NAMES[p] for p in final)
+        for parent, kids in self.decays:
+            text += f", {NAMES[parent]} > " + " ".join(NAMES[p] for p in kids)
         if self.excluded:
             text += " / " + " ".join(NAMES[p] for p in sorted(self.excluded))
         return text
 
     def latex(self) -> str:
+        final = self.outgoing if self.production is None else self.production
         ins = r"\,".join(LATEX[p] for p in self.incoming)
-        outs = r"\,".join(LATEX[p] for p in self.outgoing)
-        return rf"{ins} \to {outs}"
+        outs = r"\,".join(LATEX[p] for p in final)
+        text = rf"{ins} \to {outs}"
+        for parent, kids in self.decays:
+            text += rf",\; {LATEX[parent]} \to " + r"\,".join(LATEX[p] for p in kids)
+        return text
+
+
+class _Slot:
+    def __init__(self, pdg: int):
+        self.pdg = pdg
+        self.kids = []
+
+    def leaves(self) -> list:
+        return [self] if not self.kids else [leaf for k in self.kids for leaf in k.leaves()]
+
+    def canon(self) -> tuple:
+        return (self.pdg, tuple(sorted(k.canon() for k in self.kids)))
+
+    def decayed(self) -> list:
+        return [self] + [s for k in self.kids for s in k.decayed()] if self.kids else []
 
 
 def _resolve(token: str) -> list:
@@ -45,11 +70,43 @@ def _resolve(token: str) -> list:
     raise ValueError(f"unknown particle {token!r}")
 
 
+def _split(statement: str) -> tuple:
+    if statement.count(">") != 1:
+        raise ValueError(f"expected exactly one '>' in {statement.strip()!r}")
+    lhs, rhs = statement.split(">")
+    return [_resolve(t) for t in lhs.split()], [_resolve(t) for t in rhs.split()]
+
+
+def _decay_options(statement: str) -> list:
+    parents, kids = _split(statement)
+    if len(parents) != 1 or len(kids) < 2:
+        raise ValueError(f"decay must be 'X > Y Z ...': {statement.strip()!r}")
+    return [
+        (parent, ks)
+        for parent in parents[0]
+        for ks in product(*kids)
+        if charge3(parent) == sum(charge3(k) for k in ks)
+    ]
+
+
+def _apply_decays(outs: tuple, decays: tuple) -> tuple:
+    top = [_Slot(p) for p in outs]
+    for parent, kids in decays:
+        targets = [s for slot in top for s in slot.leaves() if s.pdg == parent]
+        if not targets:
+            raise ValueError(f"cannot decay {NAMES[parent]}: not in the final state at that point")
+        for slot in targets:
+            slot.kids = [_Slot(k) for k in kids]
+    return tuple(top)
+
+
 def parse_process(text: str, max_qcd=None, max_qed=None) -> list:
     """Parse a MadGraph-style process string into explicit subprocesses.
 
-    Syntax: ``e+ e- > mu+ mu- [/ z h] [QCD=n] [QED=n]``. Multiparticle labels
-    (``j``, ``p``, ``l+``, ``l-``, ``vl``, ``vl~``) are expanded.
+    Syntax: ``e+ e- > mu+ mu- [, X > Y Z ...] [/ z h] [QCD=n] [QED=n]``.
+    Decay statements (optionally parenthesised, and chainable) restrict the
+    diagrams to those where the decaying particle is a propagator.
+    Multiparticle labels (``j``, ``p``, ``l+``, ``l-``, ``vl``, ``vl~``) are expanded.
     """
     for key, value in _ORDER_RE.findall(text):
         if key.upper() == "QCD":
@@ -59,15 +116,13 @@ def parse_process(text: str, max_qcd=None, max_qed=None) -> list:
     text = _ORDER_RE.sub(" ", text)
 
     body, _, veto = text.partition("/")
-    if body.count(">") != 1:
-        raise ValueError("process must contain exactly one '>'")
-    lhs, rhs = body.split(">")
-    in_options = [_resolve(t) for t in lhs.split()]
-    out_options = [_resolve(t) for t in rhs.split()]
+    statements = [s for s in body.replace("(", ",").replace(")", ",").split(",") if s.strip()]
+    if not statements:
+        raise ValueError("empty process")
+    in_options, out_options = _split(statements[0])
     if not in_options or not out_options:
         raise ValueError("process needs initial and final state particles")
-    if len(in_options) + len(out_options) < 3:
-        raise ValueError("process needs at least 3 external legs")
+    decay_options = [_decay_options(s) for s in statements[1:]]
     excluded = frozenset(abs(p) for t in veto.split() for p in _resolve(t))
 
     seen = set()
@@ -76,9 +131,23 @@ def parse_process(text: str, max_qcd=None, max_qed=None) -> list:
         for outs in product(*out_options):
             if sum(charge3(p) for p in ins) != sum(charge3(p) for p in outs):
                 continue
-            key = (tuple(sorted(ins)), tuple(sorted(outs)))
-            if key in seen:
-                continue
-            seen.add(key)
-            processes.append(Process(ins, outs, excluded, max_qcd, max_qed))
+            for decays in product(*decay_options):
+                top = _apply_decays(outs, decays)
+                key = (tuple(sorted(ins)), tuple(sorted(s.canon() for s in top)))
+                if key in seen:
+                    continue
+                seen.add(key)
+                flat = [leaf for slot in top for leaf in slot.leaves()]
+                if len(ins) + len(flat) < 3:
+                    raise ValueError("process needs at least 3 external legs")
+                position = {id(leaf): len(ins) + i for i, leaf in enumerate(flat)}
+                resonances = tuple(
+                    (slot.pdg, tuple(sorted(position[id(l)] for l in slot.leaves())))
+                    for s in top
+                    for slot in s.decayed()
+                )
+                processes.append(Process(
+                    ins, tuple(leaf.pdg for leaf in flat), excluded, max_qcd, max_qed,
+                    production=outs if decays else None, decays=decays, resonances=resonances,
+                ))
     return processes
