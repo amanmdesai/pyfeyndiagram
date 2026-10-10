@@ -21,6 +21,10 @@ class Process:
     decays: tuple = ()
     resonances: tuple = ()
     model: Optional[Model] = field(default=None, compare=False, repr=False)
+    loops: int = 0
+    one_pi: bool = False
+    tadpoles: bool = False
+    external_corrections: bool = True
 
     @property
     def legs(self) -> tuple:
@@ -36,6 +40,8 @@ class Process:
             text += f", {name(parent)} > " + " ".join(name(p) for p in kids)
         if self.excluded:
             text += " / " + " ".join(name(p) for p in sorted(self.excluded))
+        if self.loops:
+            text += f" [{self.loops} loop]"
         return text
 
     def latex(self) -> str:
@@ -94,14 +100,23 @@ def _apply_decays(outs: tuple, decays: tuple, model: Model) -> tuple:
     return tuple(top)
 
 
-def parse_process(text: str, max_qcd=None, max_qed=None, model: Model = None) -> list:
+def parse_process(
+    text: str, max_qcd=None, max_qed=None, model: Model = None,
+    loops: int = 0, one_pi: bool = False, tadpoles: bool = False, external_corrections: bool = True,
+) -> list:
     """Parse a MadGraph-style process string into explicit subprocesses.
 
     Syntax: ``e+ e- > mu+ mu- [, X > Y Z ...] [/ z h] [QCD=n] [QED=n]``.
     Decay statements (optionally parenthesised, and chainable) restrict the
     diagrams to those where the decaying particle is a propagator.
     Multiparticle labels (``j``, ``p``, ``l+``, ``l-``, ``vl``, ``vl~`` in the SM) are expanded.
+
+    ``loops=1`` asks for one-loop diagrams instead of tree diagrams. ``one_pi`` keeps only
+    one-particle-irreducible ones, ``tadpoles`` includes tadpoles and ``external_corrections=False``
+    drops self-energy insertions on external legs.
     """
+    if loops not in (0, 1):
+        raise ValueError("only 0 or 1 loops are supported")
     model = model or Model()
     for key, value in _ORDER_RE.findall(text):
         if key.upper() == "QCD":
@@ -144,5 +159,6 @@ def parse_process(text: str, max_qcd=None, max_qed=None, model: Model = None) ->
                 processes.append(Process(
                     ins, tuple(leaf.pdg for leaf in flat), excluded, max_qcd, max_qed,
                     production=outs if decays else None, decays=decays, resonances=resonances, model=model,
+                    loops=loops, one_pi=one_pi, tadpoles=tadpoles, external_corrections=external_corrections,
                 ))
     return processes

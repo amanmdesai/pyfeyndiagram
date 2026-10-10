@@ -1,6 +1,6 @@
 # pyfeyndiagram
 
-Tree-level Standard Model Feynman diagram generator. Declare a process, get every diagram as a PDF and as TikZ-Feynman LaTeX.
+Standard Model Feynman diagram generator, tree level by default and one loop on request. Declare a process, get every diagram as a PDF and as TikZ-Feynman LaTeX.
 
 Pure Python 3; depends only on `numpy` and `matplotlib` (no LaTeX needed to produce the PDF).
 
@@ -31,6 +31,8 @@ writes `out/ep_em_to_mup_mum.pdf` and `out/ep_em_to_mup_mum.tex` and prints the 
 | `--yukawa LIST` | fermions with a Higgs coupling (default `t,b,ta`) |
 | `--ckm` | full CKM mixing instead of diagonal |
 | `--max-qcd N`, `--max-qed N` | maximum power of `g_s` / `e` |
+| `--loops N` | `0` for tree level (default) or `1` for one-loop diagrams; see [One-loop diagrams](#one-loop-diagrams) |
+| `--1pi`, `--tadpoles`, `--no-external-corrections` | with `--loops 1`: keep only 1PI diagrams, include tadpoles, drop self-energies on external legs |
 | `--no-pdf`, `--no-tex` | skip writing the PDF or the LaTeX file |
 | `--list-particles` | print particle names, PDG ids and multiparticle labels, then exit |
 | `--version` | print the version |
@@ -85,6 +87,46 @@ All were generated with `-o examples`.
 
 and is used anywhere in the document with `\FeynDiagram{1}`.
 
+### One-loop diagrams
+
+Loops are opt-in; without `--loops 1` the output is tree level, as before.
+
+```
+pyfeyndiagram "e+ e- > mu+ mu-" --loops 1 -o out                  # writes out/ep_em_to_mup_mum_1loop.{pdf,tex}
+pyfeyndiagram "h > a a" --loops 1 --1pi -o out
+pyfeyndiagram "g g > g g QED=0 / u d c s b t" --loops 1 --1pi -o out
+```
+
+Each diagram has exactly one loop. Coupling orders count vertices, so `QCD=n` / `QED=n` cap the total order of the one-loop diagram (for example `e+ e- > mu+ mu-` is `QED=4`), and `/` vetoes loop particles as well. Diagrams are found by gluing a conjugate pair of legs onto the tree diagrams of the process and removing duplicates.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--loops 1` | tree level | generate one-loop diagrams (`--loops 2` and higher is an error) |
+| `--1pi` | off | keep only one-particle-irreducible diagrams (every line attached to the loop is an external leg) |
+| `--tadpoles` | off | also generate tadpoles (a loop joined to the rest by a single line) |
+| `--no-external-corrections` | on | drop self-energy insertions on external legs |
+
+Self-energy insertions on internal lines are kept unless `--1pi` is given. A loop of two lines is drawn as two arcs and a loop at a single vertex as a circle.
+
+Counts checked by hand:
+
+| Process | All | `--no-external-corrections` | `--1pi` |
+|---|---|---|---|
+| `e+ e- > mu+ mu- / z w+ h g u d c s b t ta- ve vm vt` (pure QED) | 10 | 6 | 2 (the two boxes) |
+| `e- mu- > e- mu-`, same veto (crossing) | 10 | 6 | 2 |
+| `h > a a` | | | 9 (t, b, tau triangles in two orientations, two W triangles, one `WWγγ` bubble) |
+
+Gauge: the electroweak sector is in unitary gauge (no Goldstone or electroweak ghost loops). QCD uses a gluon ghost (`ghg`, pdg 82, drawn dotted) so gluon loops are complete; ghosts only ever appear inside loops.
+
+Example commands (output in [`examples/`](examples/)):
+
+| Command | Diagrams | Files |
+|---|---|---|
+| `pyfeyndiagram "e+ e- > mu+ mu- / z w+ h g u d c s b t ta- ve vm vt" --loops 1 -n ee_to_mumu_qed_1loop` | 10 | `ee_to_mumu_qed_1loop.{pdf,tex}` |
+| `pyfeyndiagram "e+ e- > mu+ mu-" --loops 1 --1pi -n ee_to_mumu_1loop_1pi` | 9 | `ee_to_mumu_1loop_1pi.{pdf,tex}` |
+| `pyfeyndiagram "h > a a" --loops 1 --1pi -n h_to_gammagamma_1loop_1pi` | 9 | `h_to_gammagamma_1loop_1pi.{pdf,tex}` |
+| `pyfeyndiagram "g g > g g QED=0 / u d c s b t" --loops 1 --1pi -n gg_to_gg_1loop_1pi` | 18 | `gg_to_gg_1loop_1pi.{pdf,tex}` |
+
 ### Process syntax (MadGraph-style)
 
 ```
@@ -117,7 +159,7 @@ with open("ee_mumu.tex", "w") as f:
     f.write(tex_document(results))
 ```
 
-`generate_all(text, model=None, max_qcd=None, max_qed=None)` takes an optional `Model`; the default is the Standard Model.
+`generate_all(text, model=None, max_qcd=None, max_qed=None, loops=0, one_pi=False, tadpoles=False, external_corrections=True)` takes an optional `Model` (the default is the Standard Model) and the loop options described above; `loops` is `0` or `1`.
 
 ### Adding particles and interactions
 
@@ -139,7 +181,7 @@ write_pdf(generate_all("e+ e- > mu+ mu-", model), "zp.pdf")    # gamma, Z and Z'
 write_pdf(generate_all("g g > x x~", model), "gg_xx.pdf")
 ```
 
-- `add_particle(pdg, name, latex, kind, charge=0, self_conjugate=False)`: `pdg` is positive and `-pdg` is the antiparticle, named `x~` (or `x+` / `x-` swapped for names ending in a charge sign). `kind` is the line style: `fermion`, `photon`, `boson`, `gluon` or `scalar`. `charge` is in units of e (`2 / 3`, `-1`).
+- `add_particle(pdg, name, latex, kind, charge=0, self_conjugate=False)`: `pdg` is positive and `-pdg` is the antiparticle, named `x~` (or `x+` / `x-` swapped for names ending in a charge sign). `kind` is the line style: `fermion`, `photon`, `boson`, `gluon`, `scalar` or `ghost`. `charge` is in units of e (`2 / 3`, `-1`).
 - `add_vertex(qcd, qed, *fields)`: a 3- or 4-point vertex with coupling orders `(qcd, qed)`. Fields are names or signed PDG ids in all-incoming convention, and the charges must sum to zero. New couplings count as `qcd` or `qed`.
 - `add_multiparticle(label, names)` defines a label such as `j` for use in process strings, and `add_alias(alias, name)` an extra spelling of a name.
 
@@ -156,9 +198,11 @@ The built-in model is the Standard Model in unitary gauge, so there are no Golds
 
 ## Limitations
 
-- **Tree level only.** All-order generation is infinite and needs loop machinery.
+- **One loop at most.** `--loops 2` and higher is not supported.
+- Loop diagrams are topologies only: no amplitudes, symmetry factors, renormalisation counterterms or Goldstone/electroweak ghost loops. Loop-induced vertices (such as `Hgg`) appear only as loops.
+- TikZ for loops (`bend`, self-loop `out`/`in`/`min distance`, dotted ghost) has not been compiled either; the PDF is the reference rendering.
 - The generated `.tex` has **not been compiled**: no LaTeX was available during development. It was only checked structurally (balanced braces and environments, valid tikz-feynman edge styles). Please report compile errors.
-- Layout is a deterministic barycentric embedding; large final states can look crowded.
+- Layout is a deterministic barycentric embedding; large final states can look crowded. Loop diagrams are laid out with the loop opened in each possible way and the fewest line crossings kept; diagrams where identical legs force crossings can still look tangled.
 - Added particles: self-conjugate (Majorana) fermions are rejected, charged scalars are drawn without an arrow, and vertices have at most 4 legs.
 
 ## Checked diagram counts
@@ -173,3 +217,5 @@ The built-in model is the Standard Model in unitary gauge, so there are no Golds
 | `e+ e- > e+ e- a / z` | 8 |
 | `g g > h` | 0 |
 | `e+ e- > t t~, t > b w+, t~ > b~ w-` | 2 |
+| `e+ e- > mu+ mu- / z w+ h g u d c s b t ta- ve vm vt --loops 1` | 10 (6 without external corrections, 2 with `--1pi`) |
+| `h > a a --loops 1 --1pi` | 9 |

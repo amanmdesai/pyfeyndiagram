@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 
-KINDS = ("fermion", "photon", "boson", "gluon", "scalar")
+KINDS = ("fermion", "photon", "boson", "gluon", "scalar", "ghost")
 
 UP_QUARKS = (2, 4, 6)
 DOWN_QUARKS = (1, 3, 5)
@@ -29,6 +29,7 @@ _SM_PARTICLES = [
     (23, "z", "Z", "boson", 0, True),
     (24, "w+", "W^{+}", "boson", 1, False),
     (25, "h", "H", "scalar", 0, True),
+    (82, "ghg", "c", "ghost", 0, False),
 ]
 
 _SM_ALIASES = {"gamma": "a", "tau-": "ta-", "tau+": "ta+"}
@@ -104,7 +105,7 @@ class Model:
     ) -> Particle:
         """Define a particle with positive ``pdg``; ``-pdg`` is its antiparticle.
 
-        ``kind`` is the line style: fermion, photon, boson, gluon or scalar.
+        ``kind`` is the line style: fermion, photon, boson, gluon, scalar or ghost.
         ``charge`` is in units of e. The antiparticle name and LaTeX are derived
         (``x`` -> ``x~``, ``x+`` -> ``x-``) unless given.
         """
@@ -112,8 +113,8 @@ class Model:
             raise ValueError("pdg must be positive; the antiparticle is -pdg")
         if kind not in KINDS:
             raise ValueError(f"kind must be one of {', '.join(KINDS)}, not {kind!r}")
-        if self_conjugate and kind == "fermion":
-            raise ValueError("self-conjugate (Majorana) fermions are not supported")
+        if self_conjugate and kind in ("fermion", "ghost"):
+            raise ValueError("self-conjugate (Majorana) fermions and ghosts are not supported")
         if self_conjugate and charge:
             raise ValueError("a self-conjugate particle must be neutral")
         particle = Particle(
@@ -199,6 +200,9 @@ class Model:
     def kind(self, pdg: int) -> str:
         return self.particles[abs(pdg)].kind
 
+    def has_arrow(self, pdg: int) -> bool:
+        return self.particles[abs(pdg)].kind in ("fermion", "ghost")
+
     def anti(self, pdg: int) -> int:
         return pdg if self.particles[abs(pdg)].self_conjugate else -pdg
 
@@ -255,3 +259,5 @@ class Model:
         add(0, 2, 25, 25, 24, -24)
         add(0, 2, 25, 25, 23, 23)
         add(0, 2, 25, 25, 25, 25)
+
+        add(1, 0, 82, -82, 21)

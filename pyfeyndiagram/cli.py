@@ -21,7 +21,7 @@ def _filename(process: str) -> str:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="pyfeyndiagram",
-        description="Generate tree-level Standard Model Feynman diagrams as PDF and TikZ-Feynman LaTeX.",
+        description="Generate Standard Model Feynman diagrams (tree level or one loop) as PDF and TikZ-Feynman LaTeX.",
     )
     parser.add_argument("process", nargs="?", help='MadGraph-style process, e.g. "e+ e- > mu+ mu-" or "g g > t t~ / h"')
     parser.add_argument("-o", "--outdir", default=".", help="output directory (default: .)")
@@ -30,6 +30,13 @@ def main(argv=None) -> int:
     parser.add_argument("--ckm", action="store_true", help="use full CKM mixing instead of diagonal")
     parser.add_argument("--max-qcd", type=int, help="maximum power of g_s")
     parser.add_argument("--max-qed", type=int, help="maximum power of e (electroweak and Higgs couplings)")
+    parser.add_argument("--loops", type=int, default=0, help="number of loops: 0 for tree level (default) or 1")
+    parser.add_argument("--1pi", dest="one_pi", action="store_true", help="with --loops, keep only one-particle-irreducible diagrams")
+    parser.add_argument("--tadpoles", action="store_true", help="with --loops, include tadpole diagrams")
+    parser.add_argument(
+        "--no-external-corrections", dest="external_corrections", action="store_false",
+        help="with --loops, drop self-energy insertions on external legs",
+    )
     parser.add_argument("--no-pdf", action="store_true", help="do not write the PDF")
     parser.add_argument("--no-tex", action="store_true", help="do not write the LaTeX file")
     parser.add_argument("--list-particles", action="store_true", help="list particle names and multiparticle labels, then exit")
@@ -48,16 +55,19 @@ def main(argv=None) -> int:
 
     try:
         model = Model(yukawa=[s for s in args.yukawa.split(",") if s], ckm=args.ckm)
-        results = generate_all(args.process, model, args.max_qcd, args.max_qed)
+        results = generate_all(
+            args.process, model, args.max_qcd, args.max_qed,
+            args.loops, args.one_pi, args.tadpoles, args.external_corrections,
+        )
     except (ValueError, KeyError) as err:
         parser.error(str(err))
 
     if not results:
-        print("no tree-level diagrams for this process", file=sys.stderr)
+        print(f"no {'one-loop' if args.loops else 'tree-level'} diagrams for this process", file=sys.stderr)
         return 1
 
     os.makedirs(args.outdir, exist_ok=True)
-    stem = os.path.join(args.outdir, args.name or _filename(args.process))
+    stem = os.path.join(args.outdir, args.name or _filename(args.process) + (f"_{args.loops}loop" if args.loops else ""))
     written = []
     if not args.no_pdf:
         write_pdf(results, stem + ".pdf")

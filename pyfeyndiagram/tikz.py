@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from .layout import label_side, layout
+import math
+
+from .layout import LOOP_RADIUS, label_side, layout
 
 SCALE = 1.5
 TEXT_WIDTH = 18.0
@@ -29,12 +31,27 @@ def tikz_picture(lay) -> str:
     edges = []
     for line in lay.lines:
         style = model.kind(line.pdg)
-        if style == "fermion":
+        if model.has_arrow(line.pdg):
             options = "fermion" if line.pdg > 0 else "anti fermion"
+            if style == "ghost":
+                options += ", dotted"
         else:
             options = _STYLE[style]
+        if line.a == line.b:
+            degrees = math.degrees(line.bend)
+            options += (
+                rf", out={degrees + 45:.0f}, in={degrees - 45:.0f}, min distance={LOOP_RADIUS * 3 * SCALE:.1f}cm"
+            )
+        elif line.bend:
+            angle = math.degrees(2 * math.atan(2 * abs(line.bend)))
+            options += f", bend {'left' if line.bend > 0 else 'right'}={angle:.0f}"
         if not line.external:
-            side = label_side(lay.pos[line.a], lay.pos[line.b])
+            if line.a == line.b:
+                side = 1
+            elif line.bend:
+                side = 1 if line.bend > 0 else -1
+            else:
+                side = line.side or label_side(lay.pos[line.a], lay.pos[line.b])
             key = "edge label" if side > 0 else "edge label'"
             options += rf", {key}=\({model.latex(line.pdg)}\)"
         edges.append(f"({line.a}) -- [{options}] ({line.b})")
@@ -62,7 +79,7 @@ def tex_document(results, cols: int = None) -> str:
             )
         body.append(
             rf"\subsection*{{${process.latex()}$ \normalfont({len(diagrams)} diagram"
-            + ("s" if len(diagrams) != 1 else "") + ")}"
+            + ("s" if len(diagrams) != 1 else "") + (", one loop" if process.loops else "") + ")}"
         )
         numbers = list(range(first, counter + 1))
         for start in range(0, len(numbers), per_row):
