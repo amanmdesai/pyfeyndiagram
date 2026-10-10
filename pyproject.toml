@@ -3,14 +3,17 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "feyndiag"
-version = "0.1.0"
+name = "pyfeyndiagram"
+dynamic = ["version"]
 description = "Tree-level Standard Model Feynman diagram generator with PDF and TikZ-Feynman output"
 requires-python = ">=3.9"
 dependencies = ["numpy", "matplotlib"]
 
 [project.scripts]
-feyndiag = "feyndiag.cli:main"
+pyfeyndiagram = "pyfeyndiagram.cli:main"
 
 [tool.setuptools]
-packages = ["feyndiag"]
+packages = ["pyfeyndiagram"]
+
+[tool.setuptools.dynamic]
+version = {attr = "pyfeyndiagram.__version__"}

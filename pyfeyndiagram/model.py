@@ -31,7 +31,7 @@ _YUKAWA_FLAVOURS = {
 _ALIASES = {"gamma": "a", "tau-": "ta-", "tau+": "ta+"}
 
 MULTIPARTICLES = {
-    "j": ["g", "u", "d", "c", "s", "b", "u~", "d~", "c~", "s~", "b~"],
+    "j": ["g", "u", "d", "c", "s", "u~", "d~", "c~", "s~"],
     "l+": ["e+", "mu+", "ta+"],
     "l-": ["e-", "mu-", "ta-"],
     "vl": ["ve", "vm", "vt"],
