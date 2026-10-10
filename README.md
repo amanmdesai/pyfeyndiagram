@@ -126,6 +126,7 @@ Example commands (output in [`examples/`](examples/)):
 | `pyfeyndiagram "e+ e- > mu+ mu-" --loops 1 --1pi -n ee_to_mumu_1loop_1pi` | 9 | `ee_to_mumu_1loop_1pi.{pdf,tex}` |
 | `pyfeyndiagram "h > a a" --loops 1 --1pi -n h_to_gammagamma_1loop_1pi` | 9 | `h_to_gammagamma_1loop_1pi.{pdf,tex}` |
 | `pyfeyndiagram "g g > g g QED=0 / u d c s b t" --loops 1 --1pi -n gg_to_gg_1loop_1pi` | 18 | `gg_to_gg_1loop_1pi.{pdf,tex}` |
+| `pyfeyndiagram "g g > t t~ QED=0" --loops 1 --1pi -n gg_to_ttbar_1loop_1pi` | 7 | `gg_to_ttbar_1loop_1pi.{pdf,tex}` |
 
 ### Process syntax (MadGraph-style)
 
