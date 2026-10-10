@@ -6,7 +6,6 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.figure import Figure
 
 from .layout import label_side, layout
-from .model import LATEX, kind
 
 WAVE_AMP = 0.05
 WAVELENGTH = 0.2
@@ -42,10 +41,11 @@ def draw_diagram(ax, lay) -> None:
     ax.axis("off")
     ax.set_xlim(-0.75, lay.width + 0.75)
     ax.set_ylim(lay.ymin - 0.5, lay.ymax + 0.5)
+    model = lay.diagram.model
 
     for line in lay.lines:
         p, q = lay.pos[line.a], lay.pos[line.b]
-        style = kind(line.pdg)
+        style = model.kind(line.pdg)
         pts = _line_points(style, p, q)
         linestyle = (0, (4, 3)) if style == "scalar" else "-"
         ax.plot(pts[:, 0], pts[:, 1], color="k", lw=1.1, ls=linestyle, solid_capstyle="round")
@@ -63,12 +63,12 @@ def draw_diagram(ax, lay) -> None:
             normal = label_side(p, q) * np.array([-unit[1], unit[0]])
             offset = LABEL_OFFSET + (GLUON_R if style == "gluon" else 0)
             x, y = mid + normal * offset
-            ax.text(x, y, f"${LATEX[line.pdg]}$", ha="center", va="center", fontsize=11)
+            ax.text(x, y, f"${model.latex(line.pdg)}$", ha="center", va="center", fontsize=11)
 
     for node, (pdg, incoming) in lay.externals.items():
         x, y = lay.pos[node]
         ax.text(
-            x + (-0.08 if incoming else 0.08), y, f"${LATEX[pdg]}$",
+            x + (-0.08 if incoming else 0.08), y, f"${model.latex(pdg)}$",
             ha="right" if incoming else "left", va="center", fontsize=12,
         )
 

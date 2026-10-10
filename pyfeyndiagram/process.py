@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import product
 from typing import Optional
 
-from .model import LATEX, MULTIPARTICLES, NAMES, PDG_BY_NAME, anti, charge3
+from .model import Model
 
 _ORDER_RE = re.compile(r"\b(QCD|QED)\s*(?:<=|=)\s*(\d+)", re.IGNORECASE)
 
@@ -20,29 +20,32 @@ class Process:
     production: Optional[tuple] = None
     decays: tuple = ()
     resonances: tuple = ()
+    model: Optional[Model] = field(default=None, compare=False, repr=False)
 
     @property
     def legs(self) -> tuple:
         """All external labels in the all-incoming convention."""
-        return tuple(self.incoming) + tuple(anti(p) for p in self.outgoing)
+        return tuple(self.incoming) + tuple(self.model.anti(p) for p in self.outgoing)
 
     def __str__(self) -> str:
+        name = self.model.name
         final = self.outgoing if self.production is None else self.production
-        text = " ".join(NAMES[p] for p in self.incoming)
-        text += " > " + " ".join(NAMES[p] for p in final)
+        text = " ".join(name(p) for p in self.incoming)
+        text += " > " + " ".join(name(p) for p in final)
         for parent, kids in self.decays:
-            text += f", {NAMES[parent]} > " + " ".join(NAMES[p] for p in kids)
+            text += f", {name(parent)} > " + " ".join(name(p) for p in kids)
         if self.excluded:
-            text += " / " + " ".join(NAMES[p] for p in sorted(self.excluded))
+            text += " / " + " ".join(name(p) for p in sorted(self.excluded))
         return text
 
     def latex(self) -> str:
+        latex = self.model.latex
         final = self.outgoing if self.production is None else self.production
-        ins = r"\,".join(LATEX[p] for p in self.incoming)
-        outs = r"\,".join(LATEX[p] for p in final)
+        ins = r"\,".join(latex(p) for p in self.incoming)
+        outs = r"\,".join(latex(p) for p in final)
         text = rf"{ins} \to {outs}"
         for parent, kids in self.decays:
-            text += rf",\; {LATEX[parent]} \to " + r"\,".join(LATEX[p] for p in kids)
+            text += rf",\; {latex(parent)} \to " + r"\,".join(latex(p) for p in kids)
         return text
 
 
@@ -61,53 +64,45 @@ class _Slot:
         return [self] + [s for k in self.kids for s in k.decayed()] if self.kids else []
 
 
-def _resolve(token: str) -> list:
-    key = token.lower()
-    if key in MULTIPARTICLES:
-        return [PDG_BY_NAME[n] for n in MULTIPARTICLES[key]]
-    if key in PDG_BY_NAME:
-        return [PDG_BY_NAME[key]]
-    raise ValueError(f"unknown particle {token!r}")
-
-
-def _split(statement: str) -> tuple:
+def _split(statement: str, model: Model) -> tuple:
     if statement.count(">") != 1:
         raise ValueError(f"expected exactly one '>' in {statement.strip()!r}")
     lhs, rhs = statement.split(">")
-    return [_resolve(t) for t in lhs.split()], [_resolve(t) for t in rhs.split()]
+    return [model.resolve(t) for t in lhs.split()], [model.resolve(t) for t in rhs.split()]
 
 
-def _decay_options(statement: str) -> list:
-    parents, kids = _split(statement)
+def _decay_options(statement: str, model: Model) -> list:
+    parents, kids = _split(statement, model)
     if len(parents) != 1 or len(kids) < 2:
         raise ValueError(f"decay must be 'X > Y Z ...': {statement.strip()!r}")
     return [
         (parent, ks)
         for parent in parents[0]
         for ks in product(*kids)
-        if charge3(parent) == sum(charge3(k) for k in ks)
+        if model.charge3(parent) == sum(model.charge3(k) for k in ks)
     ]
 
 
-def _apply_decays(outs: tuple, decays: tuple) -> tuple:
+def _apply_decays(outs: tuple, decays: tuple, model: Model) -> tuple:
     top = [_Slot(p) for p in outs]
     for parent, kids in decays:
         targets = [s for slot in top for s in slot.leaves() if s.pdg == parent]
         if not targets:
-            raise ValueError(f"cannot decay {NAMES[parent]}: not in the final state at that point")
+            raise ValueError(f"cannot decay {model.name(parent)}: not in the final state at that point")
         for slot in targets:
             slot.kids = [_Slot(k) for k in kids]
     return tuple(top)
 
 
-def parse_process(text: str, max_qcd=None, max_qed=None) -> list:
+def parse_process(text: str, max_qcd=None, max_qed=None, model: Model = None) -> list:
     """Parse a MadGraph-style process string into explicit subprocesses.
 
     Syntax: ``e+ e- > mu+ mu- [, X > Y Z ...] [/ z h] [QCD=n] [QED=n]``.
     Decay statements (optionally parenthesised, and chainable) restrict the
     diagrams to those where the decaying particle is a propagator.
-    Multiparticle labels (``j``, ``p``, ``l+``, ``l-``, ``vl``, ``vl~``) are expanded.
+    Multiparticle labels (``j``, ``p``, ``l+``, ``l-``, ``vl``, ``vl~`` in the SM) are expanded.
     """
+    model = model or Model()
     for key, value in _ORDER_RE.findall(text):
         if key.upper() == "QCD":
             max_qcd = int(value)
@@ -119,20 +114,20 @@ def parse_process(text: str, max_qcd=None, max_qed=None) -> list:
     statements = [s for s in body.replace("(", ",").replace(")", ",").split(",") if s.strip()]
     if not statements:
         raise ValueError("empty process")
-    in_options, out_options = _split(statements[0])
+    in_options, out_options = _split(statements[0], model)
     if not in_options or not out_options:
         raise ValueError("process needs initial and final state particles")
-    decay_options = [_decay_options(s) for s in statements[1:]]
-    excluded = frozenset(abs(p) for t in veto.split() for p in _resolve(t))
+    decay_options = [_decay_options(s, model) for s in statements[1:]]
+    excluded = frozenset(abs(p) for t in veto.split() for p in model.resolve(t))
 
     seen = set()
     processes = []
     for ins in product(*in_options):
         for outs in product(*out_options):
-            if sum(charge3(p) for p in ins) != sum(charge3(p) for p in outs):
+            if sum(model.charge3(p) for p in ins) != sum(model.charge3(p) for p in outs):
                 continue
             for decays in product(*decay_options):
-                top = _apply_decays(outs, decays)
+                top = _apply_decays(outs, decays, model)
                 key = (tuple(sorted(ins)), tuple(sorted(s.canon() for s in top)))
                 if key in seen:
                     continue
@@ -148,6 +143,6 @@ def parse_process(text: str, max_qcd=None, max_qed=None) -> list:
                 )
                 processes.append(Process(
                     ins, tuple(leaf.pdg for leaf in flat), excluded, max_qcd, max_qed,
-                    production=outs if decays else None, decays=decays, resonances=resonances,
+                    production=outs if decays else None, decays=decays, resonances=resonances, model=model,
                 ))
     return processes

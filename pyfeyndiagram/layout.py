@@ -8,7 +8,6 @@ from typing import NamedTuple
 import numpy as np
 
 from .generate import Diagram
-from .model import FERMIONS, anti
 
 MIN_WIDTH = 2.4
 VERTEX_SPACING = 1.2
@@ -50,6 +49,7 @@ def label_side(p, q) -> int:
 
 def layout(diagram: Diagram) -> Layout:
     n = len(diagram.legs)
+    model = diagram.model
     if diagram.n_in not in (1, 2):
         raise ValueError("only 1 or 2 incoming particles are supported")
 
@@ -150,8 +150,8 @@ def layout(diagram: Diagram) -> Layout:
     for e in diagram.edges:
         external = e.u.startswith("x")
         dx = pos[e.v][0] - pos[e.u][0]
-        if dx < -EPS or (abs(dx) <= EPS and e.pdg < 0 and abs(e.pdg) in FERMIONS):
-            lines.append(Line(e.v, e.u, anti(e.pdg), external))
+        if dx < -EPS or (abs(dx) <= EPS and e.pdg < 0 and model.kind(e.pdg) == "fermion"):
+            lines.append(Line(e.v, e.u, model.anti(e.pdg), external))
         else:
             lines.append(Line(e.u, e.v, e.pdg, external))
 

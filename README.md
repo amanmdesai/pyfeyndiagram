@@ -117,6 +117,34 @@ with open("ee_mumu.tex", "w") as f:
     f.write(tex_document(results))
 ```
 
+`generate_all(text, model=None, max_qcd=None, max_qed=None)` takes an optional `Model`; the default is the Standard Model.
+
+### Adding particles and interactions
+
+A `Model` starts as the Standard Model and can be extended in place:
+
+```python
+from pyfeyndiagram import Model, generate_all, write_pdf
+
+model = Model()
+model.add_particle(32, "zp", "Z'", "boson", self_conjugate=True)
+model.add_particle(9000, "x", "X", "fermion", charge=2 / 3)
+
+model.add_vertex(0, 1, "e-", "e+", "zp")
+model.add_vertex(0, 1, "mu-", "mu+", "zp")
+model.add_vertex(1, 0, "x", "x~", "g")
+model.add_vertex(0, 1, "x", "x~", "a")
+
+write_pdf(generate_all("e+ e- > mu+ mu-", model), "zp.pdf")    # gamma, Z and Z' diagrams
+write_pdf(generate_all("g g > x x~", model), "gg_xx.pdf")
+```
+
+- `add_particle(pdg, name, latex, kind, charge=0, self_conjugate=False)`: `pdg` is positive and `-pdg` is the antiparticle, named `x~` (or `x+` / `x-` swapped for names ending in a charge sign). `kind` is the line style: `fermion`, `photon`, `boson`, `gluon` or `scalar`. `charge` is in units of e (`2 / 3`, `-1`).
+- `add_vertex(qcd, qed, *fields)`: a 3- or 4-point vertex with coupling orders `(qcd, qed)`. Fields are names or signed PDG ids in all-incoming convention, and the charges must sum to zero. New couplings count as `qcd` or `qed`.
+- `add_multiparticle(label, names)` defines a label such as `j` for use in process strings, and `add_alias(alias, name)` an extra spelling of a name.
+
+Extended models are available from the Python API only; the command line always uses the SM.
+
 ## Output
 
 - **PDF**: diagrams on A4 pages, with the coupling orders shown per diagram. Fermion arrows follow fermion flow; identical final-state particles are drawn with crossed lines where the topology requires it.
@@ -124,13 +152,14 @@ with open("ee_mumu.tex", "w") as f:
 
 ## Model
 
-Unitary gauge, so there are no Goldstone or ghost diagrams. Vertices: QED, QCD (including `ggg`, `gggg`), `Z` and `W` couplings, triple and quartic electroweak gauge couplings, `HVV`, `HHVV`, `HHH`, `HHHH`, and `Hff` for the `--yukawa` set. There are no tree-level `Hgg` or `Hγγ` vertices. Defaults (third-generation Yukawas, diagonal CKM) match MadGraph's `sm`.
+The built-in model is the Standard Model in unitary gauge, so there are no Goldstone or ghost diagrams. Vertices: QED, QCD (including `ggg`, `gggg`), `Z` and `W` couplings, triple and quartic electroweak gauge couplings, `HVV`, `HHVV`, `HHH`, `HHHH`, and `Hff` for the `--yukawa` set. There are no tree-level `Hgg` or `Hγγ` vertices. Defaults (third-generation Yukawas, diagonal CKM) match MadGraph's `sm`.
 
 ## Limitations
 
 - **Tree level only.** All-order generation is infinite and needs loop machinery.
 - The generated `.tex` has **not been compiled**: no LaTeX was available during development. It was only checked structurally (balanced braces and environments, valid tikz-feynman edge styles). Please report compile errors.
 - Layout is a deterministic barycentric embedding; large final states can look crowded.
+- Added particles: self-conjugate (Majorana) fermions are rejected, charged scalars are drawn without an arrow, and vertices have at most 4 legs.
 
 ## Checked diagram counts
 

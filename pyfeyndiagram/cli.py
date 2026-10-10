@@ -8,7 +8,7 @@ import sys
 from . import __version__
 from .draw import write_pdf
 from .generate import generate_all
-from .model import LATEX, MULTIPARTICLES, NAMES, Model
+from .model import Model
 from .tikz import tex_document
 
 
@@ -37,9 +37,10 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     if args.list_particles:
-        for pdg in sorted(NAMES, key=lambda p: (abs(p), -p)):
-            print(f"{NAMES[pdg]:6s} pdg={pdg:<4d} ${LATEX[pdg]}$")
-        for label, members in sorted(MULTIPARTICLES.items()):
+        model = Model()
+        for pdg in model.pdgs():
+            print(f"{model.name(pdg):6s} pdg={pdg:<4d} ${model.latex(pdg)}$")
+        for label, members in sorted(model.multiparticles.items()):
             print(f"{label:6s} = {' '.join(members)}")
         return 0
     if not args.process:

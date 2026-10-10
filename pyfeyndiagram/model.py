@@ -1,43 +1,50 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
 
-SELF_CONJUGATE = frozenset({21, 22, 23, 25})
-FERMIONS = frozenset({1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15, 16})
+KINDS = ("fermion", "photon", "boson", "gluon", "scalar")
+
 UP_QUARKS = (2, 4, 6)
 DOWN_QUARKS = (1, 3, 5)
 CHARGED_LEPTONS = (11, 13, 15)
 NEUTRINOS = (12, 14, 16)
+FERMIONS = frozenset(UP_QUARKS + DOWN_QUARKS + CHARGED_LEPTONS + NEUTRINOS)
 
-_BASE_NAMES = {
-    1: "d", 2: "u", 3: "s", 4: "c", 5: "b", 6: "t",
-    11: "e-", 12: "ve", 13: "mu-", 14: "vm", 15: "ta-", 16: "vt",
-    21: "g", 22: "a", 23: "z", 24: "w+", 25: "h",
-}
+_SM_PARTICLES = [
+    (1, "d", "d", "fermion", -1 / 3, False),
+    (2, "u", "u", "fermion", 2 / 3, False),
+    (3, "s", "s", "fermion", -1 / 3, False),
+    (4, "c", "c", "fermion", 2 / 3, False),
+    (5, "b", "b", "fermion", -1 / 3, False),
+    (6, "t", "t", "fermion", 2 / 3, False),
+    (11, "e-", "e^{-}", "fermion", -1, False),
+    (12, "ve", r"\nu_{e}", "fermion", 0, False),
+    (13, "mu-", r"\mu^{-}", "fermion", -1, False),
+    (14, "vm", r"\nu_{\mu}", "fermion", 0, False),
+    (15, "ta-", r"\tau^{-}", "fermion", -1, False),
+    (16, "vt", r"\nu_{\tau}", "fermion", 0, False),
+    (21, "g", "g", "gluon", 0, True),
+    (22, "a", r"\gamma", "photon", 0, True),
+    (23, "z", "Z", "boson", 0, True),
+    (24, "w+", "W^{+}", "boson", 1, False),
+    (25, "h", "H", "scalar", 0, True),
+]
 
-_BASE_LATEX = {
-    1: "d", 2: "u", 3: "s", 4: "c", 5: "b", 6: "t",
-    11: "e^{-}", 12: r"\nu_{e}", 13: r"\mu^{-}", 14: r"\nu_{\mu}",
-    15: r"\tau^{-}", 16: r"\nu_{\tau}",
-    21: "g", 22: r"\gamma", 23: "Z", 24: "W^{+}", 25: "H",
-}
+_SM_ALIASES = {"gamma": "a", "tau-": "ta-", "tau+": "ta+"}
 
-_CHARGE3 = {1: -1, 2: 2, 3: -1, 4: 2, 5: -1, 6: 2, 11: -3, 13: -3, 15: -3, 24: 3}
-
-_YUKAWA_FLAVOURS = {
-    "e": 11, "mu": 13, "ta": 15, "u": 2, "d": 1, "s": 3, "c": 4, "b": 5, "t": 6,
-}
-
-_ALIASES = {"gamma": "a", "tau-": "ta-", "tau+": "ta+"}
-
-MULTIPARTICLES = {
+_SM_MULTIPARTICLES = {
     "j": ["g", "u", "d", "c", "s", "u~", "d~", "c~", "s~"],
+    "p": ["g", "u", "d", "c", "s", "u~", "d~", "c~", "s~"],
     "l+": ["e+", "mu+", "ta+"],
     "l-": ["e-", "mu-", "ta-"],
     "vl": ["ve", "vm", "vt"],
     "vl~": ["ve~", "vm~", "vt~"],
 }
-MULTIPARTICLES["p"] = MULTIPARTICLES["j"]
+
+_YUKAWA_FLAVOURS = {
+    "e": 11, "mu": 13, "ta": 15, "u": 2, "d": 1, "s": 3, "c": 4, "b": 5, "t": 6,
+}
 
 
 def _anti_name(name: str) -> str:
@@ -59,55 +66,159 @@ def _anti_latex(tex: str) -> str:
     return rf"\bar{{{tex}}}"
 
 
-NAMES: dict[int, str] = {}
-LATEX: dict[int, str] = {}
-for _pdg, _name in _BASE_NAMES.items():
-    NAMES[_pdg] = _name
-    LATEX[_pdg] = _BASE_LATEX[_pdg]
-    if _pdg not in SELF_CONJUGATE:
-        NAMES[-_pdg] = _anti_name(_name)
-        LATEX[-_pdg] = _anti_latex(_BASE_LATEX[_pdg])
+@dataclass(frozen=True)
+class Particle:
+    """A particle with positive PDG id; its antiparticle (if any) is ``-pdg``."""
 
-PDG_BY_NAME: dict[str, int] = {name: pdg for pdg, name in NAMES.items()}
-for _alias, _target in _ALIASES.items():
-    PDG_BY_NAME[_alias] = PDG_BY_NAME[_target]
-
-
-def anti(pdg: int) -> int:
-    return pdg if abs(pdg) in SELF_CONJUGATE else -pdg
-
-
-def charge3(pdg: int) -> int:
-    c = _CHARGE3.get(abs(pdg), 0)
-    return c if pdg > 0 else -c
-
-
-def kind(pdg: int) -> str:
-    a = abs(pdg)
-    if a in FERMIONS:
-        return "fermion"
-    return {21: "gluon", 22: "photon", 23: "boson", 24: "boson", 25: "scalar"}[a]
+    pdg: int
+    name: str
+    latex: str
+    kind: str
+    charge3: int
+    self_conjugate: bool
+    anti_name: str
+    anti_latex: str
 
 
 class Model:
-    """Tree-level SM vertices in unitary gauge, all-incoming convention.
+    """Tree-level vertices in all-incoming convention; the SM in unitary gauge by default.
 
     Orders are (QCD, QED) powers of the couplings g_s and e; electroweak and
-    Higgs couplings all count towards QED.
+    Higgs couplings all count towards QED. Extend the model with
+    :meth:`add_particle`, :meth:`add_vertex` and :meth:`add_multiparticle`.
     """
 
     def __init__(self, yukawa=("t", "b", "ta"), ckm: bool = False):
         self.yukawa = tuple(yukawa)
         self.ckm = ckm
-        self.vertices = self._build_vertices()
-        self.completions = self._build_completions()
+        self.particles: dict[int, Particle] = {}
+        self.multiparticles: dict[str, list[str]] = {}
+        self.vertices: dict[tuple[int, ...], tuple[int, int]] = {}
+        self._lookup: dict[str, int] = {}
+        self._completions = None
+        self._load_sm()
 
-    def _build_vertices(self) -> dict[tuple[int, ...], tuple[int, int]]:
-        vertices: dict[tuple[int, ...], tuple[int, int]] = {}
+    def add_particle(
+        self, pdg: int, name: str, latex: str, kind: str, charge: float = 0,
+        self_conjugate: bool = False, anti_name: str = None, anti_latex: str = None,
+    ) -> Particle:
+        """Define a particle with positive ``pdg``; ``-pdg`` is its antiparticle.
 
-        def add(qcd, qed, *labels):
-            vertices[tuple(sorted(labels))] = (qcd, qed)
+        ``kind`` is the line style: fermion, photon, boson, gluon or scalar.
+        ``charge`` is in units of e. The antiparticle name and LaTeX are derived
+        (``x`` -> ``x~``, ``x+`` -> ``x-``) unless given.
+        """
+        if pdg <= 0:
+            raise ValueError("pdg must be positive; the antiparticle is -pdg")
+        if kind not in KINDS:
+            raise ValueError(f"kind must be one of {', '.join(KINDS)}, not {kind!r}")
+        if self_conjugate and kind == "fermion":
+            raise ValueError("self-conjugate (Majorana) fermions are not supported")
+        if self_conjugate and charge:
+            raise ValueError("a self-conjugate particle must be neutral")
+        particle = Particle(
+            pdg, name, latex, kind, round(3 * charge), self_conjugate,
+            name if self_conjugate else anti_name or _anti_name(name),
+            latex if self_conjugate else anti_latex or _anti_latex(latex),
+        )
+        names = {particle.name.lower(), particle.anti_name.lower()}
+        if pdg in self.particles or any(n in self._lookup for n in names):
+            raise ValueError(f"particle {name!r} (pdg {pdg}) is already defined")
+        self.particles[pdg] = particle
+        self._lookup[particle.name.lower()] = pdg
+        self._lookup[particle.anti_name.lower()] = pdg if self_conjugate else -pdg
+        return particle
 
+    def add_alias(self, alias: str, name: str) -> None:
+        self._lookup[alias.lower()] = self.pdg(name)
+
+    def add_multiparticle(self, label: str, names) -> None:
+        names = list(names)
+        for name in names:
+            self.pdg(name)
+        self.multiparticles[label.lower()] = names
+
+    def add_vertex(self, qcd: int, qed: int, *fields) -> None:
+        """Add a 3- or 4-point vertex of coupling orders (qcd, qed).
+
+        Fields are particle names or signed PDG ids, all-incoming: ``("e-", "e+", "zp")``
+        is the vertex where an incoming e-, an incoming e+ and an incoming Z' meet.
+        """
+        labels = tuple(self._label(f) for f in fields)
+        if len(labels) not in (3, 4):
+            raise ValueError("a vertex needs 3 or 4 fields")
+        if sum(self.charge3(p) for p in labels):
+            raise ValueError(f"vertex {fields} does not conserve charge")
+        self.vertices[tuple(sorted(labels))] = (qcd, qed)
+        self._completions = None
+
+    @property
+    def completions(self):
+        if self._completions is None:
+            completions = defaultdict(list)
+            for key, (qcd, qed) in self.vertices.items():
+                for missing in set(key):
+                    rest = list(key)
+                    rest.remove(missing)
+                    completions[tuple(rest)].append((missing, qcd, qed))
+            self._completions = completions
+        return self._completions
+
+    def pdg(self, name: str) -> int:
+        try:
+            return self._lookup[name.lower()]
+        except KeyError:
+            raise ValueError(f"unknown particle {name!r}") from None
+
+    def resolve(self, token: str) -> list:
+        """PDG ids for a particle name or multiparticle label."""
+        members = self.multiparticles.get(token.lower())
+        return [self.pdg(n) for n in members] if members is not None else [self.pdg(token)]
+
+    def pdgs(self) -> list:
+        """All signed PDG ids, ordered by |pdg| with the particle first."""
+        found = []
+        for pdg in sorted(self.particles):
+            found.append(pdg)
+            if not self.particles[pdg].self_conjugate:
+                found.append(-pdg)
+        return found
+
+    def name(self, pdg: int) -> str:
+        p = self.particles[abs(pdg)]
+        return p.name if pdg > 0 else p.anti_name
+
+    def latex(self, pdg: int) -> str:
+        p = self.particles[abs(pdg)]
+        return p.latex if pdg > 0 else p.anti_latex
+
+    def charge3(self, pdg: int) -> int:
+        c = self.particles[abs(pdg)].charge3
+        return c if pdg > 0 else -c
+
+    def kind(self, pdg: int) -> str:
+        return self.particles[abs(pdg)].kind
+
+    def anti(self, pdg: int) -> int:
+        return pdg if self.particles[abs(pdg)].self_conjugate else -pdg
+
+    def _label(self, field) -> int:
+        if isinstance(field, str):
+            return self.pdg(field)
+        particle = self.particles.get(abs(field))
+        if particle is None:
+            raise ValueError(f"unknown particle {field!r}")
+        return abs(field) if particle.self_conjugate else field
+
+    def _load_sm(self) -> None:
+        for pdg, name, latex, kind, charge, self_conjugate in _SM_PARTICLES:
+            self.add_particle(pdg, name, latex, kind, charge, self_conjugate)
+        for alias, name in _SM_ALIASES.items():
+            self.add_alias(alias, name)
+        for label, names in _SM_MULTIPARTICLES.items():
+            self.add_multiparticle(label, names)
+
+        add = self.add_vertex
         quarks = UP_QUARKS + DOWN_QUARKS
         for q in quarks:
             add(1, 0, q, -q, 21)
@@ -144,13 +255,3 @@ class Model:
         add(0, 2, 25, 25, 24, -24)
         add(0, 2, 25, 25, 23, 23)
         add(0, 2, 25, 25, 25, 25)
-        return vertices
-
-    def _build_completions(self):
-        completions = defaultdict(list)
-        for key, (qcd, qed) in self.vertices.items():
-            for missing in set(key):
-                rest = list(key)
-                rest.remove(missing)
-                completions[tuple(rest)].append((missing, qcd, qed))
-        return completions

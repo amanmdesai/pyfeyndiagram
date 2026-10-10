@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from .layout import label_side, layout
-from .model import LATEX, kind
 
 SCALE = 1.5
 TEXT_WIDTH = 18.0
@@ -17,18 +16,19 @@ _PREAMBLE = r"""\documentclass[a4paper,11pt]{article}
 
 def tikz_picture(lay) -> str:
     """tikz-feynman code for one diagram, using explicit vertex coordinates."""
+    model = lay.diagram.model
     rows = [r"\begin{tikzpicture}", r"\begin{feynman}"]
     for node in sorted(lay.pos, key=lambda n: (n[0], int(n[1:]))):
         x, y = lay.pos[node]
         coords = f"at ({x * SCALE:.2f},{y * SCALE:.2f})"
         if node in lay.externals:
-            rows.append(rf"\vertex ({node}) {coords} {{${LATEX[lay.externals[node][0]]}$}};")
+            rows.append(rf"\vertex ({node}) {coords} {{${model.latex(lay.externals[node][0])}$}};")
         else:
             rows.append(rf"\vertex ({node}) {coords};")
 
     edges = []
     for line in lay.lines:
-        style = kind(line.pdg)
+        style = model.kind(line.pdg)
         if style == "fermion":
             options = "fermion" if line.pdg > 0 else "anti fermion"
         else:
@@ -36,7 +36,7 @@ def tikz_picture(lay) -> str:
         if not line.external:
             side = label_side(lay.pos[line.a], lay.pos[line.b])
             key = "edge label" if side > 0 else "edge label'"
-            options += rf", {key}=\({LATEX[line.pdg]}\)"
+            options += rf", {key}=\({model.latex(line.pdg)}\)"
         edges.append(f"({line.a}) -- [{options}] ({line.b})")
     rows.append(r"\diagram* {")
     rows.append(",\n".join("  " + e for e in edges))

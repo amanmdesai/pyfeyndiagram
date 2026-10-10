@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from itertools import product
 from typing import NamedTuple
 
-from .model import Model, anti
+from .model import Model
 from .process import Process, parse_process
 
 
@@ -22,9 +22,10 @@ class Diagram:
     edges: list
     qcd: int
     qed: int
+    model: Model
 
     def external_pdg(self, index: int) -> int:
-        return self.legs[index] if index < self.n_in else anti(self.legs[index])
+        return self.legs[index] if index < self.n_in else self.model.anti(self.legs[index])
 
 
 class Leaf(NamedTuple):
@@ -85,7 +86,7 @@ def _partitions(mask: int):
         sub = (sub - 1) & rest
 
 
-def _build_diagram(top: Node, legs: tuple, n_in: int) -> Diagram:
+def _build_diagram(top: Node, legs: tuple, n_in: int, model: Model) -> Diagram:
     last = len(legs) - 1
     edges = []
     counter = [0]
@@ -102,10 +103,11 @@ def _build_diagram(top: Node, legs: tuple, n_in: int) -> Diagram:
 
     attach(top, "v0")
     edges.append(Edge(f"x{last}", "v0", legs[last]))
-    return Diagram(legs, n_in, edges, top.qcd, top.qed)
+    return Diagram(legs, n_in, edges, top.qcd, top.qed, model)
 
 
 def _has_resonances(diagram: Diagram, resonances: tuple) -> bool:
+    anti = diagram.model.anti
     adj = defaultdict(list)
     for e in diagram.edges:
         adj[e.u].append(e.v)
@@ -135,8 +137,9 @@ def _has_resonances(diagram: Diagram, resonances: tuple) -> bool:
     return True
 
 
-def generate(process: Process, model: Model) -> list:
+def generate(process: Process, model: Model = None) -> list:
     """All tree-level diagrams of a process, as a list of Diagram."""
+    model = model or process.model
     legs = process.legs
     n = len(legs)
     last = n - 1
@@ -166,13 +169,13 @@ def generate(process: Process, model: Model) -> list:
                     qed = vqed + sum(_orders(s)[1] for _, s in combo)
                     if qcd > max_qcd or qed > max_qed:
                         continue
-                    node = Node(anti(missing), frozenset(s for _, s in combo), qcd, qed)
+                    node = Node(model.anti(missing), frozenset(s for _, s in combo), qcd, qed)
                     found[node.label].add(node)
         currents[mask] = found
 
     tops = [s for ss in currents[full].values() for s in ss]
     tops.sort(key=_signature)
-    diagrams = [_build_diagram(top, legs, len(process.incoming)) for top in tops]
+    diagrams = [_build_diagram(top, legs, len(process.incoming), model) for top in tops]
     if process.resonances:
         diagrams = [d for d in diagrams if _has_resonances(d, process.resonances)]
     return diagrams
@@ -182,7 +185,7 @@ def generate_all(text: str, model: Model = None, max_qcd=None, max_qed=None) -> 
     """Parse a process string and return [(Process, [Diagram])] for each subprocess with diagrams."""
     model = model or Model()
     results = []
-    for process in parse_process(text, max_qcd, max_qed):
+    for process in parse_process(text, max_qcd, max_qed, model):
         diagrams = generate(process, model)
         if diagrams:
             results.append((process, diagrams))
